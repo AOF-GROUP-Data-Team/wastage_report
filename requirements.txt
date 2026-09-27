@@ -1,0 +1,5 @@
+requests
+Pillow
+playwright
+google-api-python-client
+google-auth

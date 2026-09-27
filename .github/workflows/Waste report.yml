@@ -1,0 +1,45 @@
+name: Waste Documentation Report (1660942)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "auto = yesterday (KSA), used by the github alarm scheduler | manual = use report_date"
+        required: true
+        default: "auto"
+        type: choice
+        options:
+          - auto
+          - manual
+      report_date:
+        description: "YYYY-MM-DD (only used when mode = manual)"
+        required: false
+        default: ""
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Run report
+        env:
+          ZENPUT_API_KEY:        ${{ secrets.ZENPUT_API_KEY }}
+          GMAIL_PASS:            ${{ secrets.GMAIL_PASS }}
+          GOOGLE_CLIENT_ID:      ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET:  ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN:  ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+          DRIVE_FOLDER_ID_WASTE: ${{ secrets.DRIVE_FOLDER_ID_WASTE }}
+          REPORT_DATE:           ${{ github.event.inputs.mode == 'manual' && github.event.inputs.report_date || '' }}
+        run: python main.py

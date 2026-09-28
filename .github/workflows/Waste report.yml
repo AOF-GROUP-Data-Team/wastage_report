@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "auto = yesterday (KSA), used by the github alarm scheduler | manual = use report_date"
+        description: "auto = today (KSA), used by the github alarm scheduler | manual = use report_date"
         required: true
         default: "auto"
         type: choice

@@ -35,7 +35,7 @@ DRIVE_FOLDER_ID      = os.environ.get("DRIVE_FOLDER_ID_WASTE", "").strip()
 DRIVE_FOLDER_NAME    = "Waste Documentation Reports"
 
 GMAIL_USER = "aof.group.auto@gmail.com"
-TO_EMAIL   = ["o.salahaddin@aofgroup.com","m.alhuaydar@aofgroup.com","s.alharbi@aofgroup.com"]
+TO_EMAIL   = ["o.salahaddin@aofgroup.com", "m.alhuaydar@aofgroup.com", "s.alharbi@aofgroup.com"]
 CC_EMAIL   = ["a.alsalem@aofgroup.com"]
 
 TEMPLATE_ID    = 1660942
@@ -564,34 +564,62 @@ def upload_to_drive(pdf_bytes: bytes, filename: str) -> str:
 TOP_N_BRANCHES = 5
 TOP_N_ITEMS    = 5
 
-AR_DIGITS  = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
-NUM_RE     = re.compile(r"\d+(?:[.,]\d+)?")
-KG_AFTER   = re.compile(r"^\s*(kg|kgs|kilo|kilos|kig|كيلو|كجم|كغ)", re.I)
-KG_ANY     = re.compile(r"\b(kg|kgs|kilo|kig)\b|كيلو|كجم", re.I)
-UNIT_WORDS = re.compile(r"\b(pcs|pc|psc|pic|pics|piece|pieces|peses|pese|pices|kg|kgs|kilo|kilos|kig)\b|حبة|حبه|حبات|كيلو|كجم|كغ", re.I)
+AR_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+NUM_RE    = re.compile(r"\d+(?:[.,]\d+)?")
+_LETTERS  = "A-Za-z\u0600-\u06FF"
+
+def _alt(words):
+    return "|".join(sorted((re.escape(w) for w in words), key=len, reverse=True))
+
+def _tok(words):
+    return re.compile(rf"(?<![{_LETTERS}])(?:{_alt(words)})(?![{_LETTERS}])", re.I)
+
+KG_WORDS = ["kg", "kgs", "kilo", "kilos", "kilogram", "kilograms", "kig", "kgm",
+            "كيلو", "كيلوجرام", "كيلوغرام", "كجم", "كغ", "كغم", "كلغ", "كيلوات"]
+G_WORDS  = ["g", "gm", "gms", "gr", "grm", "grms", "gram", "grams", "gramm",
+            "غ", "غم", "غرام", "جرام", "جم", "جرامات", "غرامات"]
+PC_WORDS = ["pcs", "pc", "pce", "pces", "psc", "pic", "pics", "piece", "pieces", "peses",
+            "pese", "pices", "peace", "peaces", "حبة", "حبه", "حبات", "قطعة", "قطع"]
+FILLER   = ["هدر", "waste", "wastage"]
+
+KG_RE, G_RE, PC_RE, FILLER_RE = _tok(KG_WORDS), _tok(G_WORDS), _tok(PC_WORDS), _tok(FILLER)
+
+def _unit_at(text: str):
+    t = text.lstrip(" -=:/'\".,")
+    if KG_RE.match(t): return "kg"
+    if G_RE.match(t):  return "g"
+    if PC_RE.match(t): return "pcs"
+    return None
 
 def parse_waste_lines(text: str) -> list:
-    """'Shawarma bread = 280' / 'Arabi 12pic' / 'New burger sauce 9 kg' → name, qty, unit.
-    First number on the line is the quantity; kg only if a kg word follows it."""
+    """One line = one item. First number = quantity.
+    Unit: word right after the number, else a unit word anywhere on the line, else pieces.
+    Grams are converted to kg so weights add up in one unit."""
     out = []
     for raw in (text or "").translate(AR_DIGITS).splitlines():
         line = raw.strip(" -=:/'\"\t.,—")
         if not line or line.startswith(("الصنف:", "الكمية:")):
             continue
         m = NUM_RE.search(line)
-        qty, unit = None, "pcs"
+        qty, unit = None, None
         if m:
-            qty = float(m.group().replace(",", "."))
-            if KG_AFTER.match(line[m.end():]):
-                unit = "kg"
-        elif KG_ANY.search(line):
+            qty  = float(m.group().replace(",", "."))
+            unit = _unit_at(line[m.end():])
+        if unit is None:
+            if KG_RE.search(line):   unit = "kg"
+            elif G_RE.search(line):  unit = "g"
+            else:                    unit = "pcs"
+        if unit == "g":
             unit = "kg"
+            if qty is not None:
+                qty = qty / 1000.0
         name = NUM_RE.sub(" ", line)
-        name = UNIT_WORDS.sub(" ", name)
+        for rx in (KG_RE, G_RE, PC_RE, FILLER_RE):
+            name = rx.sub(" ", name)
         name = re.sub(r"[=\-/:'\"(),.—]+", " ", name)
         name = re.sub(r"\s+", " ", name).strip()
         if name:
-            out.append({"name": name, "qty": qty, "unit": unit})
+            out.append({"name": name, "qty": qty, "unit": unit, "raw": raw.strip()})
     return out
 
 def item_key(name: str) -> str:
@@ -599,7 +627,7 @@ def item_key(name: str) -> str:
     return " ".join(words)
 
 def fmt_num(x: float) -> str:
-    return f"{x:,.0f}" if x == int(x) else f"{x:,.1f}"
+    return f"{x:,.2f}".rstrip("0").rstrip(".")
 
 def compute_rankings(day: list):
     branches, items = {}, {}
@@ -610,6 +638,7 @@ def compute_rankings(day: list):
         b["subs"] += 1
         for w in parse_waste_lines(r["items"]):
             b["lines"] += 1
+            b.setdefault("parsed", []).append(w)
             k = item_key(w["name"])
             bi = b["items"].setdefault(k, {"name": w["name"], "pcs": 0.0, "kg": 0.0})
             it = items.setdefault(k, {"name": w["name"], "pcs": 0.0, "kg": 0.0, "branches": set()})
@@ -642,10 +671,11 @@ def send_email(link: str, kpis: dict, top_b: list, top_i: list, totals: dict):
     if top_b:
         rows = ""
         for n, b in enumerate(top_b, 1):
-            main_items = sorted(b["items"].values(), key=lambda i: (i["pcs"], i["kg"]), reverse=True)[:3]
-            items_txt = "<br>".join(
-                f"{html.escape(i['name'])} ({fmt_num(i['pcs']) if i['pcs'] else fmt_num(i['kg']) + ' كجم' if i['kg'] else '—'})"
-                for i in main_items) or "—"
+            by_pcs = sorted((i for i in b["items"].values() if i["pcs"]), key=lambda i: i["pcs"], reverse=True)[:3]
+            by_kg  = sorted((i for i in b["items"].values() if i["kg"]),  key=lambda i: i["kg"],  reverse=True)[:2]
+            lines  = [f"{html.escape(i['name'])} ({fmt_num(i['pcs'])} حبة)" for i in by_pcs]
+            lines += [f"{html.escape(i['name'])} ({fmt_num(i['kg'])} كجم)"  for i in by_kg]
+            items_txt = "<br>".join(lines) or "—"
             bg = "background:#fff5eb;" if n == 1 else ""
             rows += (f'<tr style="{bg}"><td style="{TD};font-weight:700">{n}</td>'
                      f'<td style="{TD};font-weight:700" dir="ltr">{html.escape(b["branch"])}</td>'
@@ -679,14 +709,14 @@ def send_email(link: str, kpis: dict, top_b: list, top_i: list, totals: dict):
     &nbsp;|&nbsp; <span style="color:#c0392b">{kpis['missing']} فرع لم يرسل</span>
   </p>
   <br>
-  <p style="color:#d35400;font-weight:700;font-size:15px">🔥 أعلى {len(top_b)} فروع في الهدر</p>
+  <p style="color:#d35400;font-weight:700;font-size:15px">أعلى {len(top_b)} فروع في الهدر</p>
   {branches_tbl}
   <br>
-  <p style="color:#d35400;font-weight:700;font-size:15px">📦 أكثر الأصناف هدراً</p>
+  <p style="color:#d35400;font-weight:700;font-size:15px">أكثر الأصناف هدراً</p>
   {items_tbl}
   <br>
   <p><a href="{link}" style="display:inline-block;background:#d35400;color:white;padding:12px 28px;
-        border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;">📄 عرض التقرير التفصيلي مع الصور</a></p>
+        border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;">عرض التقرير التفصيلي مع الصور</a></p>
   <p style="color:#636e72;font-size:11.5px">* الكميات مستخرجة من النص المكتوب في النموذج وقد تكون تقريبية — التفاصيل والصور في التقرير.</p>
   <br>
   <p>Business Intelligence<br>AOF Group</p>
@@ -750,7 +780,12 @@ def main():
     link = upload_to_drive(pdf_bytes, f"waste_documentation_{REPORT_DATE}.pdf")
 
     top_b, top_i, totals = compute_rankings(day)
-    print(f"  Totals: {totals}  |  top branch: {top_b[0]['branch'] if top_b else '-'}")
+    print(f"  Totals: {totals}")
+    for b in top_b:
+        print(f"  [{b['branch']}] pcs={fmt_num(b['pcs'])} kg={fmt_num(b['kg'])}")
+        for w in b.get("parsed", []):
+            q = "-" if w["qty"] is None else fmt_num(w["qty"])
+            print(f"      {w['raw']!r:45} -> {w['name']} | {q} {w['unit']}")
 
     print("Sending email...")
     send_email(link, kpis, top_b, top_i, totals)

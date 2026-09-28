@@ -51,7 +51,7 @@ PAGE_H_PX      = 1626    # A4 ratio at 1150px wide
 
 KSA         = ZoneInfo("Asia/Riyadh")
 REPORT_DATE = (os.environ.get("REPORT_DATE", "").strip()
-               or (datetime.now(KSA) - timedelta(days=1)).strftime("%Y-%m-%d"))
+               or datetime.now(KSA).strftime("%Y-%m-%d"))
 LOOKBACK_START = (datetime.strptime(REPORT_DATE, "%Y-%m-%d") - timedelta(days=LOOKBACK_DAYS)).strftime("%Y-%m-%d")
 
 print(f"Report date: {REPORT_DATE}  |  lookback from {LOOKBACK_START}")

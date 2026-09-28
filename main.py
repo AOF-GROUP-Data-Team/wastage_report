@@ -46,7 +46,8 @@ LOOKBACK_DAYS  = 14      # branches active in this window are "expected" to subm
 MAX_THUMBS     = 6       # per photo strip; the rest shown as +N
 PHOTO_MAX_W    = 520
 PHOTO_WORKERS  = 8
-MAX_SINGLE_PAGE_PX = 19000   # above this, paginate instead of one tall page
+PAGE_W_PX      = 1150
+PAGE_H_PX      = 1626    # A4 ratio at 1150px wide
 
 KSA         = ZoneInfo("Asia/Riyadh")
 REPORT_DATE = (os.environ.get("REPORT_DATE", "").strip()
@@ -355,6 +356,13 @@ body { font-family: 'Cairo', 'Segoe UI', sans-serif; background: #f0f2f5; color:
                            background: #ecf0f1; color: #95a5a6; font-size: 11px; }
 .thumb-more { font-size: 18px; font-weight: 700; color: #636e72; }
 .strip-empty { font-size: 12px; color: #d63031; font-weight: 700; }
+
+/* ── pagination: never split a card, never leave a header alone at a page bottom ── */
+.header, .kpi-strip, .missing-row { break-inside: avoid; page-break-inside: avoid; }
+.section-title, .am-header { break-after: avoid; page-break-after: avoid; }
+.am-block { overflow: visible; }
+.am-header { border-radius: 12px 12px 0 0; }
+@media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 """
 
 def strip_html(keys: list, photos: dict, label: str, cls: str, missing_text: str) -> str:
@@ -470,20 +478,35 @@ def build_html(day: list, missing: dict, photos: dict, kpis: dict) -> str:
 # ==============================================================================
 # 5. PDF VIA PLAYWRIGHT
 # ==============================================================================
+WAIT_IMAGES_JS = """async () => {
+    const imgs = Array.from(document.images);
+    await Promise.all(imgs.map(img => {
+        if (img.complete && img.naturalWidth > 0) return img.decode().catch(() => {});
+        return new Promise(res => { img.onload = img.onerror = res; })
+                   .then(() => img.decode().catch(() => {}));
+    }));
+    const broken = imgs.filter(i => !i.naturalWidth).length;
+    return [imgs.length, broken];
+}"""
+
 async def build_pdf(html_content: str):
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
-        page    = await browser.new_page(viewport={"width": 1150, "height": 1200})
+        page    = await browser.new_page(viewport={"width": PAGE_W_PX, "height": 1200})
         await page.set_content(html_content, wait_until="networkidle")
-        await page.wait_for_timeout(2000)
+
+        # stretch the viewport over the whole report so every photo gets painted
         height = int(await page.evaluate("() => document.body.scrollHeight"))
-        margin = {"top": "20px", "bottom": "20px", "left": "20px", "right": "20px"}
-        if height + 100 <= MAX_SINGLE_PAGE_PX:
-            pdf = await page.pdf(width="1150px", height=f"{height + 100}px",
-                                 print_background=True, margin=margin)
-        else:
-            pdf = await page.pdf(width="1150px", height="1600px",
-                                 print_background=True, margin=margin)
+        await page.set_viewport_size({"width": PAGE_W_PX, "height": height + 100})
+        total, broken = await page.evaluate(WAIT_IMAGES_JS)
+        print(f"  images in page: {total}, broken: {broken}")
+        await page.wait_for_timeout(1500)
+
+        # normal A4-shaped pages → Drive can preview it
+        pdf = await page.pdf(width=f"{PAGE_W_PX}px", height=f"{PAGE_H_PX}px",
+                             print_background=True,
+                             margin={"top": "24px", "bottom": "24px",
+                                     "left": "20px", "right": "20px"})
         await browser.close()
     return pdf, height
 

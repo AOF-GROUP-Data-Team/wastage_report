@@ -647,11 +647,16 @@ def compute_rankings(day: list):
                 b[w["unit"]]  += w["qty"]
                 bi[w["unit"]] += w["qty"]
                 it[w["unit"]] += w["qty"]
-    top_b = sorted(branches.values(), key=lambda b: (b["pcs"], b["kg"], b["lines"]), reverse=True)
-    top_i = sorted(items.values(), key=lambda i: (i["pcs"], i["kg"], len(i["branches"])), reverse=True)
-    totals = {"pcs": sum(b["pcs"] for b in branches.values()),
-              "kg":  sum(b["kg"]  for b in branches.values())}
-    return top_b[:TOP_N_BRANCHES], top_i[:TOP_N_ITEMS], totals
+    rank = {}
+    for unit in ("pcs", "kg"):
+        rank[unit] = {
+            "branches": sorted((b for b in branches.values() if b[unit] > 0),
+                               key=lambda b: b[unit], reverse=True)[:TOP_N_BRANCHES],
+            "items":    sorted((i for i in items.values() if i[unit] > 0),
+                               key=lambda i: (i[unit], len(i["branches"])), reverse=True)[:TOP_N_ITEMS],
+            "total":    sum(b[unit] for b in branches.values()),
+        }
+    return rank
 
 # ==============================================================================
 # 8. EMAIL — wastage summary + Drive link
@@ -659,65 +664,70 @@ def compute_rankings(day: list):
 TD = "padding:8px 10px;border-bottom:1px solid #eee;text-align:right;vertical-align:top"
 TH = "padding:8px 10px;background:#d35400;color:white;text-align:right;font-weight:700"
 
-def qty_cell(pcs: float, kg: float) -> str:
-    parts = []
-    if pcs: parts.append(f"<strong>{fmt_num(pcs)}</strong> حبة")
-    if kg:  parts.append(f"<strong>{fmt_num(kg)}</strong> كجم")
-    return " + ".join(parts) or "—"
+UNIT_AR = {"pcs": "حبة", "kg": "كجم"}
+TABLE   = 'style="border-collapse:collapse;width:100%;max-width:760px;font-size:13px"'
+SECTION = "color:#d35400;font-weight:700;font-size:15px;margin:18px 0 6px"
 
-def send_email(link: str, kpis: dict, top_b: list, top_i: list, totals: dict):
+def branches_table(branches: list, unit: str) -> str:
+    if not branches:
+        return f'<p style="color:#636e72">لا يوجد هدر مسجل بال{UNIT_AR[unit]}.</p>'
+    u = UNIT_AR[unit]
+    rows = ""
+    for n, b in enumerate(branches, 1):
+        top_items = sorted((i for i in b["items"].values() if i[unit]),
+                           key=lambda i: i[unit], reverse=True)[:3]
+        items_txt = "<br>".join(f"{html.escape(i['name'])} ({fmt_num(i[unit])} {u})"
+                                for i in top_items) or "—"
+        bg = "background:#fff5eb;" if n == 1 else ""
+        rows += (f'<tr style="{bg}"><td style="{TD};font-weight:700">{n}</td>'
+                 f'<td style="{TD};font-weight:700" dir="ltr">{html.escape(b["branch"])}</td>'
+                 f'<td style="{TD}">{html.escape(b["am"])}</td>'
+                 f'<td style="{TD}"><strong>{fmt_num(b[unit])}</strong> {u}</td>'
+                 f'<td style="{TD};font-size:12px" dir="ltr">{items_txt}</td></tr>')
+    return (f'<table {TABLE}><tr><th style="{TH}">#</th><th style="{TH}">الفرع</th>'
+            f'<th style="{TH}">مدير المنطقة</th><th style="{TH}">إجمالي الهدر ({u})</th>'
+            f'<th style="{TH}">أعلى الأصناف</th></tr>{rows}</table>')
+
+def items_table(items: list, unit: str) -> str:
+    if not items:
+        return ""
+    u = UNIT_AR[unit]
+    rows = "".join(
+        f'<tr><td style="{TD}" dir="ltr">{html.escape(i["name"])}</td>'
+        f'<td style="{TD}"><strong>{fmt_num(i[unit])}</strong> {u}</td>'
+        f'<td style="{TD}">{len(i["branches"])}</td></tr>' for i in items)
+    return (f'<table {TABLE}><tr><th style="{TH}">الصنف</th><th style="{TH}">الكمية ({u})</th>'
+            f'<th style="{TH}">عدد الفروع</th></tr>{rows}</table>')
+
+def send_email(link: str, kpis: dict, rank: dict):
     subject = f"تقرير توثيق الهدر — {REPORT_DATE}"
-
-    if top_b:
-        rows = ""
-        for n, b in enumerate(top_b, 1):
-            by_pcs = sorted((i for i in b["items"].values() if i["pcs"]), key=lambda i: i["pcs"], reverse=True)[:3]
-            by_kg  = sorted((i for i in b["items"].values() if i["kg"]),  key=lambda i: i["kg"],  reverse=True)[:2]
-            lines  = [f"{html.escape(i['name'])} ({fmt_num(i['pcs'])} حبة)" for i in by_pcs]
-            lines += [f"{html.escape(i['name'])} ({fmt_num(i['kg'])} كجم)"  for i in by_kg]
-            items_txt = "<br>".join(lines) or "—"
-            bg = "background:#fff5eb;" if n == 1 else ""
-            rows += (f'<tr style="{bg}"><td style="{TD};font-weight:700">{n}</td>'
-                     f'<td style="{TD};font-weight:700" dir="ltr">{html.escape(b["branch"])}</td>'
-                     f'<td style="{TD}">{html.escape(b["am"])}</td>'
-                     f'<td style="{TD}">{qty_cell(b["pcs"], b["kg"])}</td>'
-                     f'<td style="{TD};font-size:12px" dir="ltr">{items_txt}</td></tr>')
-        branches_tbl = (f'<table style="border-collapse:collapse;width:100%;max-width:760px;font-size:13px">'
-                        f'<tr><th style="{TH}">#</th><th style="{TH}">الفرع</th><th style="{TH}">مدير المنطقة</th>'
-                        f'<th style="{TH}">إجمالي الهدر</th><th style="{TH}">أعلى الأصناف</th></tr>{rows}</table>')
-    else:
-        branches_tbl = "<p>لا توجد نماذج هدر لهذا اليوم.</p>"
-
-    if top_i:
-        rows = "".join(
-            f'<tr><td style="{TD}" dir="ltr">{html.escape(i["name"])}</td>'
-            f'<td style="{TD}">{qty_cell(i["pcs"], i["kg"])}</td>'
-            f'<td style="{TD}">{len(i["branches"])}</td></tr>' for i in top_i)
-        items_tbl = (f'<table style="border-collapse:collapse;width:100%;max-width:760px;font-size:13px">'
-                     f'<tr><th style="{TH}">الصنف</th><th style="{TH}">الكمية</th>'
-                     f'<th style="{TH}">عدد الفروع</th></tr>{rows}</table>')
-    else:
-        items_tbl = ""
-
+    pcs, kg = rank["pcs"], rank["kg"]
     body = f"""
 <div dir="rtl" style="font-family:Cairo,Arial,sans-serif;font-size:14px;color:#2d3436;line-height:1.8">
   <p>السلام عليكم،</p>
   <p>ملخص الهدر ليوم <strong>{REPORT_DATE}</strong>:</p>
   <p style="margin:6px 0">
-    إجمالي الهدر المسجل: {qty_cell(totals['pcs'], totals['kg'])}
+    إجمالي الهدر: <strong>{fmt_num(pcs['total'])}</strong> حبة &nbsp;|&nbsp; <strong>{fmt_num(kg['total'])}</strong> كجم
     &nbsp;|&nbsp; {kpis['subs']} نموذج من {kpis['sent']} فرع
     &nbsp;|&nbsp; <span style="color:#c0392b">{kpis['missing']} فرع لم يرسل</span>
   </p>
-  <br>
-  <p style="color:#d35400;font-weight:700;font-size:15px">أعلى {len(top_b)} فروع في الهدر</p>
-  {branches_tbl}
-  <br>
-  <p style="color:#d35400;font-weight:700;font-size:15px">أكثر الأصناف هدراً</p>
-  {items_tbl}
+
+  <p style="{SECTION}">أولاً: الهدر بالحبة</p>
+  <p style="margin:4px 0;font-weight:700">أعلى {len(pcs['branches'])} فروع</p>
+  {branches_table(pcs['branches'], 'pcs')}
+  <p style="margin:12px 0 4px;font-weight:700">أكثر الأصناف هدراً</p>
+  {items_table(pcs['items'], 'pcs')}
+
+  <p style="{SECTION}">ثانياً: الهدر بالكيلو</p>
+  <p style="margin:4px 0;font-weight:700">أعلى {len(kg['branches'])} فروع</p>
+  {branches_table(kg['branches'], 'kg')}
+  <p style="margin:12px 0 4px;font-weight:700">أكثر الأصناف هدراً</p>
+  {items_table(kg['items'], 'kg')}
+
   <br>
   <p><a href="{link}" style="display:inline-block;background:#d35400;color:white;padding:12px 28px;
         border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;">عرض التقرير التفصيلي مع الصور</a></p>
-  <p style="color:#636e72;font-size:11.5px">* الكميات مستخرجة من النص المكتوب في النموذج وقد تكون تقريبية — التفاصيل والصور في التقرير.</p>
+  <p style="color:#636e72;font-size:11.5px">* الكميات مستخرجة من النص المكتوب في النموذج وقد تكون تقريبية — الجرامات محولة إلى كيلو — التفاصيل والصور في التقرير.</p>
   <br>
   <p>Business Intelligence<br>AOF Group</p>
 </div>"""
@@ -779,16 +789,20 @@ def main():
     print("Uploading to Google Drive...")
     link = upload_to_drive(pdf_bytes, f"waste_documentation_{REPORT_DATE}.pdf")
 
-    top_b, top_i, totals = compute_rankings(day)
-    print(f"  Totals: {totals}")
-    for b in top_b:
+    rank = compute_rankings(day)
+    print(f"  Totals: pcs={fmt_num(rank['pcs']['total'])}  kg={fmt_num(rank['kg']['total'])}")
+    shown = {}
+    for unit in ("pcs", "kg"):
+        for b in rank[unit]["branches"]:
+            shown[b["branch"]] = b
+    for b in shown.values():
         print(f"  [{b['branch']}] pcs={fmt_num(b['pcs'])} kg={fmt_num(b['kg'])}")
         for w in b.get("parsed", []):
             q = "-" if w["qty"] is None else fmt_num(w["qty"])
             print(f"      {w['raw']!r:45} -> {w['name']} | {q} {w['unit']}")
 
     print("Sending email...")
-    send_email(link, kpis, top_b, top_i, totals)
+    send_email(link, kpis, rank)
 
 if __name__ == "__main__":
     main()

@@ -35,7 +35,7 @@ DRIVE_FOLDER_ID      = os.environ.get("DRIVE_FOLDER_ID_WASTE", "").strip()
 DRIVE_FOLDER_NAME    = "Waste Documentation Reports"
 
 GMAIL_USER = "aof.group.auto@gmail.com"
-TO_EMAIL   = ["o.salahaddin@aofgroup.com"]
+TO_EMAIL   = ["o.salahaddin@aofgroup.com","m.alhuaydar@aofgroup.com","s.alharbi@aofgroup.com"]
 CC_EMAIL   = ["a.alsalem@aofgroup.com"]
 
 TEMPLATE_ID    = 1660942
@@ -559,25 +559,135 @@ def upload_to_drive(pdf_bytes: bytes, filename: str) -> str:
     return up["webViewLink"]
 
 # ==============================================================================
-# 7. EMAIL — Drive link only
+# 7. WASTAGE RANKING — parse free-text quantities, rank branches & items
 # ==============================================================================
-def send_email(link: str, kpis: dict):
+TOP_N_BRANCHES = 5
+TOP_N_ITEMS    = 5
+
+AR_DIGITS  = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+NUM_RE     = re.compile(r"\d+(?:[.,]\d+)?")
+KG_AFTER   = re.compile(r"^\s*(kg|kgs|kilo|kilos|kig|كيلو|كجم|كغ)", re.I)
+KG_ANY     = re.compile(r"\b(kg|kgs|kilo|kig)\b|كيلو|كجم", re.I)
+UNIT_WORDS = re.compile(r"\b(pcs|pc|psc|pic|pics|piece|pieces|peses|pese|pices|kg|kgs|kilo|kilos|kig)\b|حبة|حبه|حبات|كيلو|كجم|كغ", re.I)
+
+def parse_waste_lines(text: str) -> list:
+    """'Shawarma bread = 280' / 'Arabi 12pic' / 'New burger sauce 9 kg' → name, qty, unit.
+    First number on the line is the quantity; kg only if a kg word follows it."""
+    out = []
+    for raw in (text or "").translate(AR_DIGITS).splitlines():
+        line = raw.strip(" -=:/'\"\t.,—")
+        if not line or line.startswith(("الصنف:", "الكمية:")):
+            continue
+        m = NUM_RE.search(line)
+        qty, unit = None, "pcs"
+        if m:
+            qty = float(m.group().replace(",", "."))
+            if KG_AFTER.match(line[m.end():]):
+                unit = "kg"
+        elif KG_ANY.search(line):
+            unit = "kg"
+        name = NUM_RE.sub(" ", line)
+        name = UNIT_WORDS.sub(" ", name)
+        name = re.sub(r"[=\-/:'\"(),.—]+", " ", name)
+        name = re.sub(r"\s+", " ", name).strip()
+        if name:
+            out.append({"name": name, "qty": qty, "unit": unit})
+    return out
+
+def item_key(name: str) -> str:
+    words = [w[:-1] if len(w) > 3 and w.endswith("s") else w for w in name.lower().split()]
+    return " ".join(words)
+
+def fmt_num(x: float) -> str:
+    return f"{x:,.0f}" if x == int(x) else f"{x:,.1f}"
+
+def compute_rankings(day: list):
+    branches, items = {}, {}
+    for r in day:
+        key = r["code"] or r["branch"]
+        b = branches.setdefault(key, {"branch": r["branch"], "am": r["am"], "pcs": 0.0,
+                                      "kg": 0.0, "lines": 0, "subs": 0, "items": {}})
+        b["subs"] += 1
+        for w in parse_waste_lines(r["items"]):
+            b["lines"] += 1
+            k = item_key(w["name"])
+            bi = b["items"].setdefault(k, {"name": w["name"], "pcs": 0.0, "kg": 0.0})
+            it = items.setdefault(k, {"name": w["name"], "pcs": 0.0, "kg": 0.0, "branches": set()})
+            it["branches"].add(key)
+            if w["qty"] is not None:
+                b[w["unit"]]  += w["qty"]
+                bi[w["unit"]] += w["qty"]
+                it[w["unit"]] += w["qty"]
+    top_b = sorted(branches.values(), key=lambda b: (b["pcs"], b["kg"], b["lines"]), reverse=True)
+    top_i = sorted(items.values(), key=lambda i: (i["pcs"], i["kg"], len(i["branches"])), reverse=True)
+    totals = {"pcs": sum(b["pcs"] for b in branches.values()),
+              "kg":  sum(b["kg"]  for b in branches.values())}
+    return top_b[:TOP_N_BRANCHES], top_i[:TOP_N_ITEMS], totals
+
+# ==============================================================================
+# 8. EMAIL — wastage summary + Drive link
+# ==============================================================================
+TD = "padding:8px 10px;border-bottom:1px solid #eee;text-align:right;vertical-align:top"
+TH = "padding:8px 10px;background:#d35400;color:white;text-align:right;font-weight:700"
+
+def qty_cell(pcs: float, kg: float) -> str:
+    parts = []
+    if pcs: parts.append(f"<strong>{fmt_num(pcs)}</strong> حبة")
+    if kg:  parts.append(f"<strong>{fmt_num(kg)}</strong> كجم")
+    return " + ".join(parts) or "—"
+
+def send_email(link: str, kpis: dict, top_b: list, top_i: list, totals: dict):
     subject = f"تقرير توثيق الهدر — {REPORT_DATE}"
+
+    if top_b:
+        rows = ""
+        for n, b in enumerate(top_b, 1):
+            main_items = sorted(b["items"].values(), key=lambda i: (i["pcs"], i["kg"]), reverse=True)[:3]
+            items_txt = "<br>".join(
+                f"{html.escape(i['name'])} ({fmt_num(i['pcs']) if i['pcs'] else fmt_num(i['kg']) + ' كجم' if i['kg'] else '—'})"
+                for i in main_items) or "—"
+            bg = "background:#fff5eb;" if n == 1 else ""
+            rows += (f'<tr style="{bg}"><td style="{TD};font-weight:700">{n}</td>'
+                     f'<td style="{TD};font-weight:700" dir="ltr">{html.escape(b["branch"])}</td>'
+                     f'<td style="{TD}">{html.escape(b["am"])}</td>'
+                     f'<td style="{TD}">{qty_cell(b["pcs"], b["kg"])}</td>'
+                     f'<td style="{TD};font-size:12px" dir="ltr">{items_txt}</td></tr>')
+        branches_tbl = (f'<table style="border-collapse:collapse;width:100%;max-width:760px;font-size:13px">'
+                        f'<tr><th style="{TH}">#</th><th style="{TH}">الفرع</th><th style="{TH}">مدير المنطقة</th>'
+                        f'<th style="{TH}">إجمالي الهدر</th><th style="{TH}">أعلى الأصناف</th></tr>{rows}</table>')
+    else:
+        branches_tbl = "<p>لا توجد نماذج هدر لهذا اليوم.</p>"
+
+    if top_i:
+        rows = "".join(
+            f'<tr><td style="{TD}" dir="ltr">{html.escape(i["name"])}</td>'
+            f'<td style="{TD}">{qty_cell(i["pcs"], i["kg"])}</td>'
+            f'<td style="{TD}">{len(i["branches"])}</td></tr>' for i in top_i)
+        items_tbl = (f'<table style="border-collapse:collapse;width:100%;max-width:760px;font-size:13px">'
+                     f'<tr><th style="{TH}">الصنف</th><th style="{TH}">الكمية</th>'
+                     f'<th style="{TH}">عدد الفروع</th></tr>{rows}</table>')
+    else:
+        items_tbl = ""
+
     body = f"""
 <div dir="rtl" style="font-family:Cairo,Arial,sans-serif;font-size:14px;color:#2d3436;line-height:1.8">
   <p>السلام عليكم،</p>
-  <p>تقرير توثيق الهدر ليوم <strong>{REPORT_DATE}</strong> جاهز.</p>
+  <p>ملخص الهدر ليوم <strong>{REPORT_DATE}</strong>:</p>
+  <p style="margin:6px 0">
+    إجمالي الهدر المسجل: {qty_cell(totals['pcs'], totals['kg'])}
+    &nbsp;|&nbsp; {kpis['subs']} نموذج من {kpis['sent']} فرع
+    &nbsp;|&nbsp; <span style="color:#c0392b">{kpis['missing']} فرع لم يرسل</span>
+  </p>
   <br>
-  <p style="color:#d35400;font-weight:700">ملخص اليوم:</p>
-  <p>• عدد النماذج : <strong>{kpis['subs']}</strong></p>
-  <p>• فروع أرسلت : <strong>{kpis['sent']}</strong></p>
-  <p>• فروع لم ترسل : <strong>{kpis['missing']}</strong></p>
-  <p>• نماذج بدون صورة فوديكس : <strong>{kpis['no_foodics']}</strong></p>
+  <p style="color:#d35400;font-weight:700;font-size:15px">🔥 أعلى {len(top_b)} فروع في الهدر</p>
+  {branches_tbl}
+  <br>
+  <p style="color:#d35400;font-weight:700;font-size:15px">📦 أكثر الأصناف هدراً</p>
+  {items_tbl}
   <br>
   <p><a href="{link}" style="display:inline-block;background:#d35400;color:white;padding:12px 28px;
-        border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;">📄 عرض التقرير التفصيلي</a></p>
-  <br>
-  <p style="color:#636e72;font-size:12px">التقرير يحتوي على الهدر المسجل وسببه وصور البوكس وصور التسجيل على فوديكس لكل فرع — مرتب حسب مدير المنطقة.</p>
+        border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;">📄 عرض التقرير التفصيلي مع الصور</a></p>
+  <p style="color:#636e72;font-size:11.5px">* الكميات مستخرجة من النص المكتوب في النموذج وقد تكون تقريبية — التفاصيل والصور في التقرير.</p>
   <br>
   <p>Business Intelligence<br>AOF Group</p>
 </div>"""
@@ -639,8 +749,11 @@ def main():
     print("Uploading to Google Drive...")
     link = upload_to_drive(pdf_bytes, f"waste_documentation_{REPORT_DATE}.pdf")
 
+    top_b, top_i, totals = compute_rankings(day)
+    print(f"  Totals: {totals}  |  top branch: {top_b[0]['branch'] if top_b else '-'}")
+
     print("Sending email...")
-    send_email(link, kpis)
+    send_email(link, kpis, top_b, top_i, totals)
 
 if __name__ == "__main__":
     main()

@@ -35,7 +35,7 @@ DRIVE_FOLDER_ID      = os.environ.get("DRIVE_FOLDER_ID_WASTE", "").strip()
 DRIVE_FOLDER_NAME    = "Waste Documentation Reports"
 
 GMAIL_USER = "aof.group.auto@gmail.com"
-TO_EMAIL   = ["o.salahaddin@aofgroup.com", "m.alhuaydar@aofgroup.com", "s.alharbi@aofgroup.com"]
+TO_EMAIL   = ["o.salahaddin@aofgroup.com", "m.alhuaydar@aofgroup.com", "s.alharbi@aofgroup.com" ,"a.omara@aofgroup.com","omar@aofgroup.com"]
 CC_EMAIL   = ["a.alsalem@aofgroup.com"]
 
 TEMPLATE_ID    = 1660942

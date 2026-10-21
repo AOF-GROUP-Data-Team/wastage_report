@@ -73,16 +73,18 @@ LOC_LABEL = {
     2169459: "Lubda Alaqeq LB01", 2222802: "Lubda Alkhaleej LB02",
     2232755: "Garatis QB01", 2235805: "Garatis QB02", 2254072: "Garatis QB03",
     2256386: "Garatis QB04", 2268360: "Garatis QB05", 2270650: "Garatis QB06",
-    2274188: "Garatis QB07", 2276794: "Garatis QB08",
+    2274188: "Garatis QB07", 2276794: "Garatis QB08", 2282774: "Garatis QB09",
     2171883: "Twesste TW01",
 }
 EXCLUDE_LOCS = {2175245, 2230615, 2256173}   # factory, central kitchen, warehouse
 
 AM_ROSTER = {
-    "Adnan":              ["B21", "B18", "QB05", "QB07", "QB04", "B13", "B17"],
-    "ALI ESMAIL":         ["B15", "B01", "B35", "B34", "TW01", "B04", "B39"],
+    "Adnan":              ["B21", "B18", "QB05", "QB04", "B13", "B17"],
+    "ALI ESMAIL":         ["B01", "B35", "TW01", "QB09"],
+    "FADEL":              ["B15", "QB07", "B30", "B19"],
+    "omar":               ["B04", "B39", "QB03"],
     "M.emad":             ["B26", "B32", "B22", "B37"],
-    "Islam":              ["B14", "B11", "B30", "B19", "B31", "QB02", "QB03"],
+    "Islam":              ["B34", "B14", "B11", "B31", "QB02"],
     "NAIF ALZAHRANI":     ["B16", "B12", "B07", "B06"],
     "Meqdad Ali":         ["QB06", "B02", "B27", "B05"],
     "Naresh Joshe":       ["QB01", "B09", "B10", "B08", "QB08"],

@@ -69,7 +69,7 @@ LOC_LABEL = {
     2199835: "HAJED B26", 2203271: "SARUH B27", 2210205: "MAJED B28", 2211854: "QARUH B30",
     2235670: "ANRUH B31", 2239240: "FYJED B32", 2242934: "HIRJED B33", 2243963: "URRUH B34",
     2250799: "IRRUH B35", 2257790: "SHWMAK B37", 2258220: "PSJED B36", 2260889: "UHDMM B38",
-    2263062: "HSRUH B39", 2281339: "MZDMM B40",
+    2263062: "HSRUH B39", 2281339: "MZDMM B40", 2283017: "AQKBR B41",
     2169459: "Lubda Alaqeq LB01", 2222802: "Lubda Alkhaleej LB02",
     2232755: "Garatis QB01", 2235805: "Garatis QB02", 2254072: "Garatis QB03",
     2256386: "Garatis QB04", 2268360: "Garatis QB05", 2270650: "Garatis QB06",
@@ -90,7 +90,7 @@ AM_ROSTER = {
     "Naresh Joshe":       ["QB01", "B09", "B10", "B08", "QB08"],
     "abdullah al ghanmi": ["LB01", "LB02"],
     "Salah Aldeen":       ["B23", "B25"],
-    "suhail":             ["B38", "B40"],
+    "suhail":             ["B38", "B40", "B41"],
     "Sujan":              ["B28", "B24", "B33", "B36"],
 }
 AM_BY_CODE = {code: am for am, codes in AM_ROSTER.items() for code in codes}

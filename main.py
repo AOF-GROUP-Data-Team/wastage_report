@@ -35,7 +35,7 @@ DRIVE_FOLDER_ID      = os.environ.get("DRIVE_FOLDER_ID_WASTE", "").strip()
 DRIVE_FOLDER_NAME    = "Waste Documentation Reports"
 
 GMAIL_USER = "aof.group.auto@gmail.com"
-TO_EMAIL   = ["o.salahaddin@aofgroup.com", "m.alhuaydar@aofgroup.com", "s.alharbi@aofgroup.com" ,"a.omara@aofgroup.com","omar@aofgroup.com"]
+TO_EMAIL   = ["o.salahaddin@aofgroup.com", "m.alhuaydar@aofgroup.com", "s.alharbi@aofgroup.com" ,"a.omara@aofgroup.com","omar@aofgroup.com","m.albana@aofgroup.com","m.mostafa@aofgroup.com"]
 CC_EMAIL   = ["a.alsalem@aofgroup.com"]
 
 TEMPLATE_ID    = 1660942
@@ -586,6 +586,25 @@ FILLER   = ["هدر", "waste", "wastage"]
 
 KG_RE, G_RE, PC_RE, FILLER_RE = _tok(KG_WORDS), _tok(G_WORDS), _tok(PC_WORDS), _tok(FILLER)
 
+# ── Items that are ALWAYS measured by weight ──────────────────────────────────
+# canonical name → spellings to look for anywhere on the line (substring match,
+# so "الحاشي" / "لحم حاشي" are caught too). These lines never count as pieces:
+#   explicit kg/g on the line  → used as written (grams converted to kg)
+#   bare number or "حبة"       → kg, unless the number > FORCE_KG_GRAM_GUESS,
+#                                then it is read as grams (e.g. "حاشي 500" = 0.5 kg)
+FORCE_KG_ITEMS = {
+    "حاشي": ["حاشي", "حاشى", "hashi", "hashe", "hashy", "camel"],
+}
+FORCE_KG_GRAM_GUESS = 20
+
+_FORCE_KG_RES = [(canon, re.compile(_alt(words), re.I)) for canon, words in FORCE_KG_ITEMS.items()]
+
+def force_kg_name(line: str):
+    for canon, rx in _FORCE_KG_RES:
+        if rx.search(line):
+            return canon
+    return None
+
 def _unit_at(text: str):
     t = text.lstrip(" -=:/'\".,")
     if KG_RE.match(t): return "kg"
@@ -596,6 +615,7 @@ def _unit_at(text: str):
 def parse_waste_lines(text: str) -> list:
     """One line = one item. First number = quantity.
     Unit: word right after the number, else a unit word anywhere on the line, else pieces.
+    Items in FORCE_KG_ITEMS are always weight (kg), never pieces.
     Grams are converted to kg so weights add up in one unit."""
     out = []
     for raw in (text or "").translate(AR_DIGITS).splitlines():
@@ -610,16 +630,27 @@ def parse_waste_lines(text: str) -> list:
         if unit is None:
             if KG_RE.search(line):   unit = "kg"
             elif G_RE.search(line):  unit = "g"
-            else:                    unit = "pcs"
+
+        forced = force_kg_name(line)
+        if forced:
+            if unit not in ("kg", "g"):
+                unit = "g" if (qty is not None and qty > FORCE_KG_GRAM_GUESS) else "kg"
+        elif unit is None:
+            unit = "pcs"
+
         if unit == "g":
             unit = "kg"
             if qty is not None:
                 qty = qty / 1000.0
-        name = NUM_RE.sub(" ", line)
-        for rx in (KG_RE, G_RE, PC_RE, FILLER_RE):
-            name = rx.sub(" ", name)
-        name = re.sub(r"[=\-/:'\"(),.—]+", " ", name)
-        name = re.sub(r"\s+", " ", name).strip()
+
+        if forced:
+            name = forced
+        else:
+            name = NUM_RE.sub(" ", line)
+            for rx in (KG_RE, G_RE, PC_RE, FILLER_RE):
+                name = rx.sub(" ", name)
+            name = re.sub(r"[=\-/:'\"(),.—]+", " ", name)
+            name = re.sub(r"\s+", " ", name).strip()
         if name:
             out.append({"name": name, "qty": qty, "unit": unit, "raw": raw.strip()})
     return out
@@ -729,7 +760,7 @@ def send_email(link: str, kpis: dict, rank: dict):
   <br>
   <p><a href="{link}" style="display:inline-block;background:#d35400;color:white;padding:12px 28px;
         border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;">عرض التقرير التفصيلي مع الصور</a></p>
-  <p style="color:#636e72;font-size:11.5px">* الكميات مستخرجة من النص المكتوب في النموذج وقد تكون تقريبية — الجرامات محولة إلى كيلو — التفاصيل والصور في التقرير.</p>
+  <p style="color:#636e72;font-size:11.5px">* الكميات مستخرجة من النص المكتوب في النموذج وقد تكون تقريبية — الجرامات محولة إلى كيلو — الحاشي يحسب دائماً بالكيلو — التفاصيل والصور في التقرير.</p>
   <br>
   <p>Business Intelligence<br>AOF Group</p>
 </div>"""
@@ -793,6 +824,14 @@ def main():
 
     rank = compute_rankings(day)
     print(f"  Totals: pcs={fmt_num(rank['pcs']['total'])}  kg={fmt_num(rank['kg']['total'])}")
+
+    # debug: every forced-kg line, so the حاشي conversion can be checked in the log
+    for r in day:
+        for w in parse_waste_lines(r["items"]):
+            if w["name"] in FORCE_KG_ITEMS:
+                q = "-" if w["qty"] is None else fmt_num(w["qty"])
+                print(f"  [kg-forced] {r['branch']}: {w['raw']!r} -> {q} kg")
+
     shown = {}
     for unit in ("pcs", "kg"):
         for b in rank[unit]["branches"]:

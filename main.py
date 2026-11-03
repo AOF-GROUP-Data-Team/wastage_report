@@ -79,14 +79,13 @@ LOC_LABEL = {
 EXCLUDE_LOCS = {2175245, 2230615, 2256173}   # factory, central kitchen, warehouse
 
 AM_ROSTER = {
-    "Adnan":              ["B21", "B18", "QB05", "QB04", "B13", "B17"],
-    "ALI ESMAIL":         ["B01", "B35", "TW01", "QB09"],
-    "FADEL":              ["B15", "QB07", "B30", "B19"],
+    "Adnan":              ["B21", "B17", "B15", "QB07", "B30", "B19"],
+    "ALI ESMAIL":         ["QB04", "B13", "B01", "TW01", "QB09"],
     "omar":               ["B04", "B39", "QB03"],
-    "M.emad":             ["B26", "B32", "B22", "B37"],
-    "Islam":              ["B34", "B14", "B11", "B31", "QB02"],
-    "NAIF ALZAHRANI":     ["B16", "B12", "B07", "B06"],
-    "Meqdad Ali":         ["QB06", "B02", "B27", "B05"],
+    "ALLAM":             ["B26", "B32", "B22", "B37"],
+    "Islam":              ["B35", "B34", "B14", "B11", "B31", "QB02"],
+    "NAIF ALZAHRANI":     ["B18", "B16", "B12", "B07", "B06"],
+    "Meqdad Ali":         ["QB05", "B02", "B27", "QB06", "B05"],
     "Naresh Joshe":       ["QB01", "B09", "B10", "B08", "QB08"],
     "abdullah al ghanmi": ["LB01", "LB02"],
     "Salah Aldeen":       ["B23", "B25"],

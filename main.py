@@ -76,15 +76,16 @@ LOC_LABEL = {
     2274188: "Garatis QB07", 2276794: "Garatis QB08", 2282774: "Garatis QB09",
     2171883: "Twesste TW01",
 }
-EXCLUDE_LOCS = {2175245, 2230615, 2256173}   # factory, central kitchen, warehouse
+EXCLUDE_LOCS = {2175245, 2230615, 2256173,   # factory, central kitchen, warehouse
+                2164014}                     # GHRUH B03 — deprecated branch
 
+# Roster as of 08-11-2026 (NAIF's branches → omar; omar's B04/B39 → Adnan; QB03 → Islam)
 AM_ROSTER = {
-    "Adnan":              ["B21", "B17", "B15", "QB07", "B30", "B19"],
+    "Adnan":              ["B21", "B17", "B15", "QB07", "B30", "B19", "B04", "B39"],
     "ALI ESMAIL":         ["QB04", "B13", "B01", "TW01", "QB09"],
-    "omar":               ["B04", "B39", "QB03"],
-    "ALLAM":             ["B26", "B32", "B22", "B37"],
-    "Islam":              ["B35", "B34", "B14", "B11", "B31", "QB02"],
-    "NAIF ALZAHRANI":     ["B18", "B16", "B12", "B07", "B06"],
+    "omar":               ["B18", "B16", "B12", "B07", "B06"],
+    "ALLAM":              ["B26", "B32", "B22", "B37"],
+    "Islam":              ["B35", "B34", "B14", "B11", "B31", "QB02", "QB03"],
     "Meqdad Ali":         ["QB05", "B02", "B27", "QB06", "B05"],
     "Naresh Joshe":       ["QB01", "B09", "B10", "B08", "QB08"],
     "abdullah al ghanmi": ["LB01", "LB02"],

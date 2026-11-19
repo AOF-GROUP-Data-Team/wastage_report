@@ -593,7 +593,9 @@ KG_RE, G_RE, PC_RE, FILLER_RE = _tok(KG_WORDS), _tok(G_WORDS), _tok(PC_WORDS), _
 #   bare number or "حبة"       → kg, unless the number > FORCE_KG_GRAM_GUESS,
 #                                then it is read as grams (e.g. "حاشي 500" = 0.5 kg)
 FORCE_KG_ITEMS = {
-    "حاشي": ["حاشي", "حاشى", "hashi", "hashe", "hashy", "camel"],
+    "حاشي":  ["حاشي", "حاشى", "hashi", "hashe", "hashy", "camel"],
+    "نعيمي": ["نعيمي", "نعيمى", "نعيمية", "naimi", "naeemi", "naemi",
+              "nuaimi", "naimy", "naeimi", "na'imi"],
 }
 FORCE_KG_GRAM_GUESS = 20
 
@@ -760,7 +762,7 @@ def send_email(link: str, kpis: dict, rank: dict):
   <br>
   <p><a href="{link}" style="display:inline-block;background:#d35400;color:white;padding:12px 28px;
         border-radius:8px;text-decoration:none;font-weight:700;font-size:15px;">عرض التقرير التفصيلي مع الصور</a></p>
-  <p style="color:#636e72;font-size:11.5px">* الكميات مستخرجة من النص المكتوب في النموذج وقد تكون تقريبية — الجرامات محولة إلى كيلو — الحاشي يحسب دائماً بالكيلو — التفاصيل والصور في التقرير.</p>
+  <p style="color:#636e72;font-size:11.5px">* الكميات مستخرجة من النص المكتوب في النموذج وقد تكون تقريبية — الجرامات محولة إلى كيلو — الحاشي والنعيمي يحسبان دائماً بالكيلو — التفاصيل والصور في التقرير.</p>
   <br>
   <p>Business Intelligence<br>AOF Group</p>
 </div>"""
@@ -825,7 +827,7 @@ def main():
     rank = compute_rankings(day)
     print(f"  Totals: pcs={fmt_num(rank['pcs']['total'])}  kg={fmt_num(rank['kg']['total'])}")
 
-    # debug: every forced-kg line, so the حاشي conversion can be checked in the log
+    # debug: every forced-kg line, so the حاشي / نعيمي conversion can be checked in the log
     for r in day:
         for w in parse_waste_lines(r["items"]):
             if w["name"] in FORCE_KG_ITEMS:
